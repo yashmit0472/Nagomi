@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+
+node_modules/
+
+venv/
+
+.neo4j/
+
+dist/
+
+build/
