@@ -1,122 +1,128 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState } from "react";
+import axios from "axios";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Polyline,
+  useMapEvents,
+} from "react-leaflet";
 
-function App() {
-  const [count, setCount] = useState(0)
+function LocationSelector({
+  onSelect,
+}: {
+  onSelect: (lat: number, lon: number) => void;
+}) {
+  useMapEvents({
+    click(e) {
+      onSelect(e.latlng.lat, e.latlng.lng);
+    },
+  });
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+  return null;
 }
 
-export default App
+function App() {
+  const [source, setSource] = useState<any>(null);
+  const [destination, setDestination] = useState<any>(null);
+  const [route, setRoute] = useState<any[]>([]);
+  const [distance, setDistance] = useState<number | null>(null);
+
+  const fetchRoute = async () => {
+    if (!source || !destination) return;
+
+    const response = await axios.post(
+      "http://127.0.0.1:8000/route",
+      null,
+      {
+        params: {
+          source_lat: source.lat,
+          source_lon: source.lng,
+          dest_lat: destination.lat,
+          dest_lon: destination.lng,
+        },
+      }
+    );
+
+    setRoute(
+      response.data.route.map((p: any) => [
+        p.lat,
+        p.lon,
+      ])
+    );
+
+    setDistance(response.data.distance_meters);
+  };
+
+  return (
+    <div>
+      <h1>Nagomi</h1>
+
+      <button onClick={fetchRoute}>
+        Calculate Route
+      </button>
+
+      {distance && (
+        <h3>
+          Distance: {distance.toFixed(2)} m
+        </h3>
+      )}
+
+      <MapContainer
+        center={[28.6315, 77.2167]}
+        zoom={13}
+        style={{
+          height: "80vh",
+          width: "100%",
+        }}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        <LocationSelector
+          onSelect={(lat, lon) => {
+            if (!source) {
+              setSource({
+                lat,
+                lng: lon,
+              });
+            } else if (!destination) {
+              setDestination({
+                lat,
+                lng: lon,
+              });
+            } else {
+              setSource({
+                lat,
+                lng: lon,
+              });
+              setDestination(null);
+              setRoute([]);
+              setDistance(null);
+            }
+          }}
+        />
+
+        {source && (
+          <Marker position={[source.lat, source.lng]} />
+        )}
+
+        {destination && (
+          <Marker
+            position={[
+              destination.lat,
+              destination.lng,
+            ]}
+          />
+        )}
+
+        {route.length > 0 && (
+          <Polyline positions={route} />
+        )}
+      </MapContainer>
+    </div>
+  );
+}
+
+export default App;
