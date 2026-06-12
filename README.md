@@ -1,53 +1,98 @@
 # Nagomi
 
-Nagomi is an AI-Powered Multi-Modal Mobility Optimization Platform. 
+## GraphIQ Transit: AI-Powered Multi-Modal Mobility Optimization Platform
 
-## Currently Working Features
+Nagomi models urban mobility as a dynamic, multi-layer graph spanning roads,
+walking links, public transport, and shared mobility. Instead of returning only
+the shortest path, the platform is designed to compare journeys by time, cost,
+carbon impact, comfort, and reliability.
 
-- **Interactive Map UI (Frontend)**: A React/Vite-based frontend using `react-leaflet` to render a map (centered around Delhi). You can click on the map to select a source point and a destination point.
-- **Routing Engine (Backend)**: A FastAPI backend that exposes a `/route` endpoint. It accepts source and destination coordinates and calculates the shortest path.
-- **Graph Processing**: Uses `osmnx` to load a pre-built local street network graph of Delhi (`data/graphs/delhi_graph.graphml`), extracting exact route geometries and node distances.
-- **Visualizing Routes**: Once a route is calculated, the frontend parses the route coordinates to draw a Polyline path on the map and displays the total distance in meters.
-- **Standalone Plotting**: A `graph/plot_route.py` script to manually calculate and visualize a test route using `matplotlib` and `osmnx` for backend testing and debugging.
+> An AI-powered graph intelligence platform that transforms fragmented urban
+> transportation into a self-optimizing, sustainable, and predictive mobility
+> network.
 
-## Prerequisites
+## Current Prototype
 
-- **Node.js** (for running the frontend)
-- **Python 3** (for running the backend)
-- **Data**: Ensure the `delhi_graph.graphml` file is present in the `data/graphs/` directory.
+The repository currently contains a working road-routing foundation:
 
-## How to Run
+- React and Leaflet map centered on Delhi
+- Delhi landmark search, coordinate input, and click-to-pin locations
+- FastAPI `POST /routes` multi-objective endpoint
+- Local OpenStreetMap road graph loaded through OSMnx
+- Fastest, Cheapest, and Eco Saver road-route profiles
+- Comparative time, fare, emissions, distance, and ETA estimates
+- Selectable route cards with corresponding map polylines
+- Responsive planner layout for desktop and mobile
+- Experimental Neo4j graph import scripts
+- PostgreSQL and Neo4j connectivity probes
 
-### 1. Start the Backend API
+The included graph contains 10,192 intersections and 24,441 directed road
+edges. It was generated as a `drive` network, so the current prototype does not
+yet contain walk paths, metro schedules, bus schedules, or live traffic. Fare,
+emissions, and arrival ranges are explicitly labeled estimates.
 
-Navigate to the `backend` directory, install dependencies, and start the FastAPI server using `uvicorn`:
+## Target Experience
+
+A traveler enters a start and destination, then compares complete multimodal
+itineraries such as:
+
+- Walk -> Metro -> Walk
+- Walk -> Bus -> Rickshaw
+- Rickshaw -> Metro -> Walk
+- Direct cab or two-wheeler
+
+Nagomi will rank viable itineraries under selectable objectives:
+
+- **Fastest:** minimize traffic-aware arrival time
+- **Cheapest:** minimize fares, tolls, and estimated ride-hailing cost
+- **Eco Saver:** minimize estimated CO2 and congestion impact
+- **Comfort:** reduce walking, transfers, and crowding
+- **Safety:** account for lighting, incident data, and time of day
+
+See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for the audited feature
+status, recommended architecture, data requirements, and phased build plan.
+
+## Run the Current Prototype
+
+### Backend
 
 ```bash
 cd backend
-# Install Python dependencies
+python -m venv venv
+.\venv\Scripts\activate
 pip install -r requirements.txt
-
-# Start the server
-uvicorn main:app --reload
+uvicorn main:app --reload --port 8010
 ```
-The backend will be available at `http://127.0.0.1:8000`.
 
-### 2. Start the Frontend Web App
+The API is available at `http://127.0.0.1:8010`.
 
-Navigate to the `frontend` directory, install dependencies, and start the Vite development server:
+### Frontend
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Open your browser to the local development server address provided by Vite (usually `http://localhost:5173`).
 
-### 3. Usage
+Open the Vite URL, usually `http://localhost:5173`.
 
-1. Open the frontend web app in your browser.
-2. Click anywhere on the map to drop a marker and set your **Source** location.
-3. Click a second time to drop another marker to set your **Destination** location.
-4. Click the **"Calculate Route"** button. 
-5. The application will fetch the path from the backend, draw the exact street-level route on the map, and display the calculated distance.
-6. Clicking on the map again will clear the previous points to let you start over.
+### Current Usage
+
+1. Choose Delhi landmarks or enter coordinates as `latitude, longitude`.
+2. You can also click the map to pin the active location field.
+3. Select Fastest, Cheapest, or Eco Saver.
+4. Choose **Find smarter routes**.
+5. Compare time, estimated fare, distance, emissions, and ETA range.
+6. Select any route card to highlight that path on the map.
+
+## Repository Layout
+
+```text
+backend/   FastAPI application and routing service
+data/      Local graph and future transit datasets
+frontend/  React/Vite map application
+graph/     OSM download, debugging, plotting, and Neo4j import scripts
+ml/        Reserved for prediction models
+docs/      Product, architecture, and implementation documentation
+docker/    Reserved for local service orchestration
+```
