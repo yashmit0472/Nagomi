@@ -20,6 +20,9 @@ type Location = {
   subtitle: string;
   lat: number;
   lon: number;
+  provider?: string;
+  result_type?: string;
+  confidence?: number;
 };
 
 type RoutePoint = {
@@ -90,9 +93,14 @@ type RouteResponse = {
   message?: string;
 };
 
+type PlaceSearchResponse = {
+  places: Location[];
+  source: "geoapify" | "local_graph";
+};
+
 const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8010";
 
-const PLACES: Location[] = [
+const DEFAULT_PLACES: Location[] = [
   { name: "Connaught Place", subtitle: "New Delhi", lat: 28.6315, lon: 77.2167 },
   { name: "India Gate", subtitle: "Kartavya Path", lat: 28.6129, lon: 77.2295 },
   {
@@ -149,7 +157,7 @@ function formatDistance(meters: number) {
 }
 
 function parseLocation(value: string): Location | null {
-  const knownPlace = PLACES.find(
+  const knownPlace = DEFAULT_PLACES.find(
     (place) => place.name.toLowerCase() === value.trim().toLowerCase(),
   );
   if (knownPlace) return knownPlace;
@@ -244,8 +252,8 @@ function RouteModeIcon({ route }: { route: RouteOption }) {
 }
 
 function App() {
-  const [source, setSource] = useState<Location>(PLACES[0]);
-  const [destination, setDestination] = useState<Location>(PLACES[1]);
+  const [source, setSource] = useState<Location>(DEFAULT_PLACES[0]);
+  const [destination, setDestination] = useState<Location>(DEFAULT_PLACES[1]);
   const [sourceInput, setSourceInput] = useState(source.name);
   const [destinationInput, setDestinationInput] = useState(destination.name);
   const [activeField, setActiveField] = useState<ActiveField>("source");
@@ -256,6 +264,17 @@ function App() {
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [suggestions, setSuggestions] = useState<Location[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchSource, setSearchSource] = useState<
+    "geoapify" | "local_graph"
+  >("local_graph");
+
+  const activeQuery =
+    activeField === "source" ? sourceInput : destinationInput;
+  const locationsResolved =
+    sourceInput.trim() === source.name &&
+    destinationInput.trim() === destination.name;
 
   const selectedRoute = useMemo(
     () => routes.find((route) => route.id === selectedRouteId) ?? routes[0],
@@ -274,9 +293,41 @@ function App() {
       }
       setRoutes([]);
       setError("");
+      setSuggestions([]);
+      setSearchOpen(false);
     },
     [],
   );
+
+  useEffect(() => {
+    const query = activeQuery.trim();
+    if (!searchOpen || query.length < 2) return;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await axios.get<PlaceSearchResponse>(
+          `${API_URL}/places`,
+          {
+            params: { q: query },
+            signal: controller.signal,
+          },
+        );
+        setSuggestions(response.data.places);
+        setSearchSource(response.data.source);
+      } catch (requestError) {
+        if (!axios.isCancel(requestError)) {
+          setSuggestions([]);
+          setSearchSource("local_graph");
+        }
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activeQuery, searchOpen]);
 
   const findRoutes = useCallback(
     async (nextPreference: Preference = preference) => {
@@ -298,7 +349,9 @@ function App() {
         setNotice(response.data.notice);
       } catch (requestError) {
         const message = axios.isAxiosError(requestError)
-          ? "Nagomi could not reach the routing engine. Start the FastAPI server and try again."
+          ? typeof requestError.response?.data?.message === "string"
+            ? requestError.response.data.message
+            : "Nagomi could not reach the routing engine. Start the FastAPI server and try again."
           : requestError instanceof Error
             ? requestError.message
             : "Something went wrong while planning this trip.";
@@ -311,8 +364,25 @@ function App() {
   );
 
   const applyInput = (field: ActiveField, value: string) => {
-    const parsed = parseLocation(value);
+    const suggested = suggestions.find(
+      (place) => place.name.toLowerCase() === value.trim().toLowerCase(),
+    );
+    const parsed = suggested ?? suggestions[0] ?? parseLocation(value);
     if (parsed) updateLocation(field, parsed);
+  };
+
+  const handleLocationKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+    field: ActiveField,
+  ) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const selected = suggestions[0] ?? parseLocation(event.currentTarget.value);
+      if (selected) updateLocation(field, selected);
+    }
+    if (event.key === "Escape") {
+      setSearchOpen(false);
+    }
   };
 
   const choosePreference = (nextPreference: Preference) => {
@@ -363,12 +433,21 @@ function App() {
             <label className={activeField === "source" ? "active" : ""}>
               <span>FROM</span>
               <input
-                list="nagomi-places"
                 value={sourceInput}
-                onFocus={() => setActiveField("source")}
-                onChange={(event) => setSourceInput(event.target.value)}
+                onFocus={() => {
+                  setActiveField("source");
+                  setSearchOpen(true);
+                }}
+                onChange={(event) => {
+                  setSourceInput(event.target.value);
+                  setSearchOpen(true);
+                }}
                 onBlur={(event) => applyInput("source", event.target.value)}
+                onKeyDown={(event) =>
+                  handleLocationKeyDown(event, "source")
+                }
                 placeholder="Choose starting point"
+                autoComplete="off"
               />
               <small>{source.subtitle}</small>
             </label>
@@ -378,14 +457,23 @@ function App() {
             <label className={activeField === "destination" ? "active" : ""}>
               <span>TO</span>
               <input
-                list="nagomi-places"
                 value={destinationInput}
-                onFocus={() => setActiveField("destination")}
-                onChange={(event) => setDestinationInput(event.target.value)}
+                onFocus={() => {
+                  setActiveField("destination");
+                  setSearchOpen(true);
+                }}
+                onChange={(event) => {
+                  setDestinationInput(event.target.value);
+                  setSearchOpen(true);
+                }}
                 onBlur={(event) =>
                   applyInput("destination", event.target.value)
                 }
+                onKeyDown={(event) =>
+                  handleLocationKeyDown(event, "destination")
+                }
                 placeholder="Choose destination"
+                autoComplete="off"
               />
               <small>{destination.subtitle}</small>
             </label>
@@ -400,15 +488,45 @@ function App() {
             <span>up</span>
             <span>down</span>
           </button>
-        </section>
 
-        <datalist id="nagomi-places">
-          {PLACES.map((place) => (
-            <option key={place.name} value={place.name}>
-              {place.subtitle}
-            </option>
-          ))}
-        </datalist>
+          {searchOpen && activeQuery.trim().length >= 2 && (
+            <div className="place-suggestions">
+              <div className="suggestion-source">
+                <span>
+                  {searchSource === "geoapify"
+                    ? "Searching across Delhi"
+                    : "Offline road and landmark search"}
+                </span>
+                <small>
+                  {searchSource === "geoapify" ? "Geoapify" : "Local graph"}
+                </small>
+              </div>
+              {suggestions.length > 0 ? (
+                suggestions.map((place) => (
+                  <button
+                    key={`${place.name}-${place.lat}-${place.lon}`}
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      updateLocation(activeField, place);
+                    }}
+                  >
+                    <span className="suggestion-pin" />
+                    <span>
+                      <strong>{place.name}</strong>
+                      <small>{place.subtitle}</small>
+                    </span>
+                    <small className="result-type">
+                      {place.result_type?.replaceAll("_", " ") ?? "place"}
+                    </small>
+                  </button>
+                ))
+              ) : (
+                <p>No matching Delhi location found.</p>
+              )}
+            </div>
+          )}
+        </section>
 
         <section className="preference-section">
           <div className="section-heading">
@@ -442,12 +560,18 @@ function App() {
         <button
           className="find-button"
           type="button"
-          disabled={loading}
+          disabled={loading || !locationsResolved}
           onClick={() => void findRoutes()}
         >
           {loading ? <span className="spinner" /> : <span className="button-arrow">-&gt;</span>}
           {loading ? "Building route options..." : "Find smarter routes"}
         </button>
+
+        {!locationsResolved && (
+          <p className="selection-hint">
+            Choose a search suggestion or press Enter to confirm both locations.
+          </p>
+        )}
 
         {error && <div className="error-message">{error}</div>}
 

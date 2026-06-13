@@ -1,4 +1,4 @@
-from math import ceil
+from math import atan2, ceil, cos, radians, sin, sqrt
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -120,6 +120,32 @@ def _prepare_graph() -> nx.MultiDiGraph:
 
 
 G = _prepare_graph()
+MAX_LOCAL_SNAP_METERS = 1800
+
+
+def _haversine_meters(first: Dict[str, float], second: Dict[str, float]) -> float:
+    radius = 6_371_000
+    lat1, lat2 = radians(first["lat"]), radians(second["lat"])
+    dlat = radians(second["lat"] - first["lat"])
+    dlon = radians(second["lon"] - first["lon"])
+    value = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    return radius * 2 * atan2(sqrt(value), sqrt(1 - value))
+
+
+def _nearest_node_with_distance(point: Dict[str, float]) -> Tuple[int, float]:
+    node = ox.distance.nearest_nodes(G, point["lon"], point["lat"])
+    node_point = {"lat": float(G.nodes[node]["y"]), "lon": float(G.nodes[node]["x"])}
+    return node, _haversine_meters(point, node_point)
+
+
+def _geoapify_fallback(
+    source: Dict[str, float],
+    destination: Dict[str, float],
+    preference: str,
+) -> Optional[Dict[str, Any]]:
+    from services.geo_routing import build_geoapify_route_plan
+
+    return build_geoapify_route_plan(source, destination, preference)
 
 
 def _edge_for_weight(u: int, v: int, weight: str) -> Dict[str, Any]:
@@ -175,14 +201,16 @@ def _fallback_paths(source_node: int, destination_node: int) -> Iterable[List[in
             simple_graph.add_edge(u, v, length=length)
 
     try:
-        return nx.shortest_simple_paths(
+        paths = nx.shortest_simple_paths(
             simple_graph,
             source_node,
             destination_node,
             weight="length",
         )
+        for path in paths:
+            yield path
     except (nx.NetworkXNoPath, nx.NodeNotFound):
-        return []
+        return
 
 
 def _unique_profile_paths(source_node: int, destination_node: int) -> Dict[str, List[int]]:
@@ -404,19 +432,43 @@ def build_route_plan(
     dest_lon: float,
     preference: str = "fastest",
 ) -> Dict[str, Any]:
-    source_node = ox.distance.nearest_nodes(G, source_lon, source_lat)
-    destination_node = ox.distance.nearest_nodes(G, dest_lon, dest_lat)
+    source = {"lat": source_lat, "lon": source_lon}
+    destination = {"lat": dest_lat, "lon": dest_lon}
+    source_node, source_snap = _nearest_node_with_distance(source)
+    destination_node, destination_snap = _nearest_node_with_distance(destination)
+
+    if max(source_snap, destination_snap) > MAX_LOCAL_SNAP_METERS:
+        external_plan = _geoapify_fallback(source, destination, preference)
+        if external_plan is not None:
+            return external_plan
+        return {
+            "success": False,
+            "message": (
+                "This location is outside Nagomi's bundled road graph. "
+                "Configure GEOAPIFY_API_KEY or choose a point closer to central Delhi."
+            ),
+            "routes": [],
+            "coverage": {
+                "source_snap_meters": round(source_snap),
+                "destination_snap_meters": round(destination_snap),
+            },
+        }
+
     paths = _unique_profile_paths(source_node, destination_node)
 
     if not paths:
+        external_plan = _geoapify_fallback(source, destination, preference)
+        if external_plan is not None:
+            return external_plan
         return {
             "success": False,
-            "message": "No route could be found between these points.",
+            "message": (
+                "No connected local road route was found. Try a nearby search result "
+                "or configure Geoapify whole-Delhi routing."
+            ),
             "routes": [],
         }
 
-    source = {"lat": source_lat, "lon": source_lon}
-    destination = {"lat": dest_lat, "lon": dest_lon}
     routes = []
     for profile_id in PROFILES:
         road_candidate = _road_candidate(
@@ -455,6 +507,10 @@ def build_route_plan(
         "recommended_route_id": recommended,
         "routes": routes,
         "routing_mode": "multimodal_graph",
+        "coverage": {
+            "source_snap_meters": round(source_snap),
+            "destination_snap_meters": round(destination_snap),
+        },
         "notice": (
             "Metro and bus times use the local scheduled transit graph. Traffic uses "
             "TomTom live flow when TOMTOM_API_KEY is configured, otherwise a clearly "

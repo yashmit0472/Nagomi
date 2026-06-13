@@ -40,6 +40,13 @@ Without a key, Nagomi uses a clearly labeled Delhi time-of-day congestion model.
 Copy `backend/.env.example` to `backend/.env` and set the key in your shell or
 process environment to activate live traffic.
 
+Location search indexes all named roads in the included OSM graph without a
+key. Set `GEOAPIFY_API_KEY` to enable autocomplete for addresses, neighborhoods,
+businesses, metro stations, and POIs across the whole Delhi NCT. The key stays
+in the backend and is never sent to the browser. Trips outside the bundled
+central/south Delhi graph automatically use Geoapify whole-Delhi road and
+approximated-transit geometry instead of snapping to the local graph boundary.
+
 ## Target Experience
 
 A traveler enters a start and destination, then compares complete multimodal

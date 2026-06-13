@@ -131,6 +131,114 @@
   box-shadow: 0 12px 32px rgba(49, 42, 77, 0.07);
 }
 
+.place-suggestions {
+  position: absolute;
+  z-index: 1000;
+  top: calc(100% + 8px);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border: 1px solid #dfdce8;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(44, 37, 70, 0.16);
+}
+
+.suggestion-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: 1px solid #eeecf3;
+  color: #777183;
+  background: #faf9fc;
+  font-size: 9px;
+}
+
+.suggestion-source small {
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: #6254df;
+  background: #efecff;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.place-suggestions > button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid #f0eef4;
+  color: inherit;
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.result-type {
+  max-width: 72px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  color: #777083 !important;
+  background: #f1eff5;
+  font-size: 7px !important;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.place-suggestions > button:last-child {
+  border-bottom: 0;
+}
+
+.place-suggestions > button:hover,
+.place-suggestions > button:focus-visible {
+  background: #f7f5ff;
+}
+
+.suggestion-pin {
+  width: 8px;
+  height: 8px;
+  margin-left: 3px;
+  border: 2px solid #6d5dfc;
+  border-radius: 50%;
+}
+
+.place-suggestions > button > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.place-suggestions strong {
+  overflow: hidden;
+  color: #3a344b;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-suggestions button small {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #9893a3;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-suggestions > p {
+  padding: 14px;
+  color: #8f899a;
+  font-size: 9px;
+  text-align: center;
+}
+
 .location-rail {
   display: flex;
   align-items: center;
@@ -363,8 +471,8 @@
 }
 
 .find-button:disabled {
-  cursor: wait;
-  opacity: 0.8;
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .button-arrow {
@@ -401,6 +509,14 @@
   background: #fff4f4;
   font-size: 11px;
   line-height: 1.5;
+}
+
+.selection-hint {
+  margin: 7px 30px 0;
+  color: #8f899a;
+  font-size: 9px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .results-heading {

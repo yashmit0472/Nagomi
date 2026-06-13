@@ -21,8 +21,8 @@ Status as of June 13, 2026:
 | Road shortest path | Working in code | OSMnx path weighted by edge length |
 | Route geometry | Working in code | Edge geometries returned to the frontend |
 | Distance display | Working | Frontend renders meters |
-| Address/place search | MVP built | Local Delhi landmarks, coordinates, and map pinning |
-| Multiple route alternatives | MVP built | Three objective-specific local road paths |
+| Address/place search | Provider ready | Local road index plus Geoapify autocomplete across Delhi |
+| Multiple route alternatives | MVP built | Four objectives with local and whole-Delhi provider routing |
 | Fastest routing | Estimated MVP | Road-class travel-time weights; no live traffic yet |
 | Cheapest routing | Estimated MVP | Shared-auto fare model over distance |
 | Eco Saver routing | Estimated MVP | E-rickshaw emissions model and eco road weights |
