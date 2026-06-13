@@ -12,7 +12,7 @@ import {
 import type { LatLngBoundsExpression } from "leaflet";
 import "./App.css";
 
-type Preference = "fastest" | "cheapest" | "eco";
+type Preference = "fastest" | "cheapest" | "eco" | "safest";
 type ActiveField = "source" | "destination";
 
 type Location = {
@@ -30,10 +30,15 @@ type RoutePoint = {
 type RouteLeg = {
   mode: string;
   label: string;
+  line: string | null;
+  color: string;
   from: string;
   to: string;
   duration_minutes: number;
   distance_meters: number;
+  fare_inr: number;
+  co2_grams: number;
+  geometry: RoutePoint[];
 };
 
 type RouteOption = {
@@ -48,6 +53,24 @@ type RouteOption = {
   co2_grams: number;
   transfers: number;
   walk_meters: number;
+  safety: {
+    score: number;
+    label: string;
+    is_night: boolean;
+    factors: string[];
+    source: string;
+  };
+  traffic: {
+    source: string;
+    is_live: boolean;
+    level: string;
+    delay_multiplier: number;
+    current_speed_kph: number;
+    free_flow_speed_kph: number;
+    confidence: number;
+    incidents: string[];
+    updated_at: string;
+  };
   reliability: {
     likely_min: number;
     likely_max: number;
@@ -117,6 +140,7 @@ const PREFERENCES: Array<{
   { id: "fastest", title: "Fastest", caption: "Save time" },
   { id: "cheapest", title: "Cheapest", caption: "Spend less" },
   { id: "eco", title: "Eco Saver", caption: "Lower carbon" },
+  { id: "safest", title: "Safest", caption: "Reduce exposure" },
 ];
 
 function formatDistance(meters: number) {
@@ -202,6 +226,10 @@ function RouteModeIcon({ route }: { route: RouteOption }) {
     cab: "C",
     shared_auto: "A",
     electric_rickshaw: "E",
+    multimodal: "M",
+    metro: "M",
+    bus: "B",
+    walk: "W",
   };
 
   return (
@@ -321,7 +349,7 @@ function App() {
         <section className="planner-intro">
           <span className="eyebrow">Smarter urban mobility</span>
           <h1>Move better through the city.</h1>
-          <p>Compare routes by time, price, and carbon impact.</p>
+          <p>Compare live traffic, transit, price, carbon, and safety.</p>
         </section>
 
         <section className="search-card">
@@ -396,7 +424,13 @@ function App() {
                 onClick={() => choosePreference(item.id)}
               >
                 <span className={`preference-icon ${item.id}`}>
-                  {item.id === "fastest" ? "01" : item.id === "cheapest" ? "02" : "03"}
+                  {item.id === "fastest"
+                    ? "01"
+                    : item.id === "cheapest"
+                      ? "02"
+                      : item.id === "eco"
+                        ? "03"
+                        : "04"}
                 </span>
                 <strong>{item.title}</strong>
                 <small>{item.caption}</small>
@@ -451,25 +485,81 @@ function App() {
                       <span>INR {route.fare_inr}</span>
                       <span>{formatDistance(route.distance_meters)}</span>
                       <span>{route.co2_grams} g CO2</span>
+                      <span>Safety {route.safety.score}/100</span>
                     </div>
                     {selected && (
-                      <div className="route-detail">
-                        <div>
-                          <span>Likely arrival</span>
-                          <strong>
-                            {route.reliability.likely_min}-
-                            {route.reliability.likely_max} min
-                          </strong>
+                      <>
+                        <div className="route-detail">
+                          <div>
+                            <span>Likely arrival</span>
+                            <strong>
+                              {route.reliability.likely_min}-
+                              {route.reliability.likely_max} min
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Transfers</span>
+                            <strong>
+                              {route.transfers === 0
+                                ? "Direct"
+                                : route.transfers}
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Traffic</span>
+                            <strong>
+                              {route.traffic.is_live ? "Live " : "Modeled "}
+                              {route.traffic.level}
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Safety</span>
+                            <strong>{route.safety.label}</strong>
+                          </div>
                         </div>
-                        <div>
-                          <span>Transfers</span>
-                          <strong>Direct</strong>
+                        <div className="journey-legs">
+                          {route.legs.map((leg, index) => (
+                            <div
+                              className="journey-leg"
+                              key={`${leg.label}-${leg.from}-${index}`}
+                            >
+                              <span
+                                className="leg-dot"
+                                style={{ backgroundColor: leg.color }}
+                              />
+                              <div>
+                                <strong>{leg.label}</strong>
+                                <small>
+                                  {leg.from} to {leg.to}
+                                </small>
+                              </div>
+                              <span>{leg.duration_minutes} min</span>
+                            </div>
+                          ))}
                         </div>
-                        <div>
-                          <span>Data</span>
-                          <strong>Estimated</strong>
+                        <div className="analysis-grid">
+                          <div>
+                            <span>TRAFFIC ANALYSIS</span>
+                            <strong>
+                              {route.traffic.current_speed_kph} km/h now
+                            </strong>
+                            <small>
+                              {route.traffic.free_flow_speed_kph} km/h free flow
+                              {" · "}
+                              {route.traffic.delay_multiplier}x delay
+                            </small>
+                          </div>
+                          <div>
+                            <span>SAFETY ANALYSIS</span>
+                            <strong>{route.safety.score}/100</strong>
+                            <small>
+                              {route.safety.factors.length
+                                ? route.safety.factors.join(" · ")
+                                : "Mode and road exposure scored"}
+                            </small>
+                          </div>
                         </div>
-                      </div>
+                      </>
                     )}
                   </button>
                 );
@@ -482,7 +572,7 @@ function App() {
           <span className="status-dot" />
           <span>Local graph online</span>
           <span className="footer-separator" />
-          <span>Live traffic adapter ready</span>
+          <span>Bus + metro graph online</span>
         </footer>
       </aside>
 
@@ -530,17 +620,23 @@ function App() {
             ))}
 
           {selectedRoute && (
-            <Polyline
-              positions={selectedRoute.geometry.map((point) => [
-                point.lat,
-                point.lon,
-              ])}
-              pathOptions={{
-                color: selectedRoute.color,
-                weight: 7,
-                opacity: 0.95,
-              }}
-            />
+            <>
+              {selectedRoute.legs.map((leg, index) => (
+                <Polyline
+                  key={`${leg.label}-${index}`}
+                  positions={leg.geometry.map((point) => [
+                    point.lat,
+                    point.lon,
+                  ])}
+                  pathOptions={{
+                    color: leg.color || selectedRoute.color,
+                    weight: leg.mode === "walk" ? 5 : 7,
+                    opacity: 0.95,
+                    dashArray: leg.mode === "walk" ? "4 8" : undefined,
+                  }}
+                />
+              ))}
+            </>
           )}
 
           <CircleMarker
@@ -580,8 +676,12 @@ function App() {
             Click the map to set the {activeField}
           </div>
           <div className="data-pill">
-            <span />
-            Road graph: 10,192 nodes
+            <span
+              className={selectedRoute?.traffic.is_live ? "live" : "modeled"}
+            />
+            {selectedRoute
+              ? `${selectedRoute.traffic.is_live ? "Live" : "Modeled"} traffic: ${selectedRoute.traffic.level}`
+              : "Road + transit graph online"}
           </div>
         </div>
 
@@ -609,6 +709,10 @@ function App() {
             <div className="summary-stat green">
               <span>CO2</span>
               <strong>{selectedRoute.co2_grams} g</strong>
+            </div>
+            <div className="summary-stat safe">
+              <span>SAFETY</span>
+              <strong>{selectedRoute.safety.score}/100</strong>
             </div>
           </div>
         )}

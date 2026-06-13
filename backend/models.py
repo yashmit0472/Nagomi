@@ -31,3 +31,4 @@ class HealthResponse(BaseModel):
     graph: Dict[str, int]
     live_traffic: bool
     scheduled_transit: bool
+    traffic_source: str

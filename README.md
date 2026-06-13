@@ -19,7 +19,11 @@ The repository currently contains a working road-routing foundation:
 - Delhi landmark search, coordinate input, and click-to-pin locations
 - FastAPI `POST /routes` multi-objective endpoint
 - Local OpenStreetMap road graph loaded through OSMnx
-- Fastest, Cheapest, and Eco Saver road-route profiles
+- Fastest, Cheapest, Eco Saver, and Safest objective profiles
+- Safest routing using time-of-day and infrastructure exposure scoring
+- Multi-leg journeys combining walking, e-rickshaw, bus, and metro
+- Local Delhi metro lines and major bus corridors with transfers
+- Traffic analysis on every road and bus itinerary
 - Comparative time, fare, emissions, distance, and ETA estimates
 - Selectable route cards with corresponding map polylines
 - Responsive planner layout for desktop and mobile
@@ -30,6 +34,11 @@ The included graph contains 10,192 intersections and 24,441 directed road
 edges. It was generated as a `drive` network, so the current prototype does not
 yet contain walk paths, metro schedules, bus schedules, or live traffic. Fare,
 emissions, and arrival ranges are explicitly labeled estimates.
+
+Traffic automatically uses TomTom live flow when `TOMTOM_API_KEY` is present.
+Without a key, Nagomi uses a clearly labeled Delhi time-of-day congestion model.
+Copy `backend/.env.example` to `backend/.env` and set the key in your shell or
+process environment to activate live traffic.
 
 ## Target Experience
 

@@ -1,6 +1,6 @@
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(390px, 440px) 1fr;
+  grid-template-columns: minmax(420px, 470px) 1fr;
   min-height: 100vh;
   background: #f6f6fa;
 }
@@ -261,7 +261,7 @@
 
 .preference-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 9px;
 }
 
@@ -313,6 +313,11 @@
 .preference-icon.eco {
   color: #16855a;
   background: #dff6eb;
+}
+
+.preference-icon.safest {
+  color: #16728d;
+  background: #dcf3f8;
 }
 
 .preference-grid strong {
@@ -503,11 +508,97 @@
 
 .route-detail {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   margin-top: 12px;
   padding-top: 11px;
   border-top: 1px solid #efedf3;
+}
+
+.journey-legs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid #efedf3;
+}
+
+.journey-leg {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.journey-leg .leg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(76, 67, 105, 0.08);
+}
+
+.journey-leg div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.journey-leg strong {
+  color: #464052;
+  font-size: 9px;
+}
+
+.journey-leg small {
+  overflow: hidden;
+  color: #9a95a5;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journey-leg > span:last-child {
+  color: #716b7e;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.analysis-grid > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 9px;
+  border-radius: 9px;
+  background: #f7f6fa;
+}
+
+.analysis-grid span {
+  color: #9a95a5;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.7px;
+}
+
+.analysis-grid strong {
+  margin-top: 3px;
+  color: #484153;
+  font-size: 9px;
+}
+
+.analysis-grid small {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #8d8798;
+  font-size: 8px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
 }
 
 .route-detail div {
@@ -615,6 +706,16 @@
   border-radius: 50%;
 }
 
+.data-pill span.modeled {
+  background: #f4a340;
+  box-shadow: 0 0 0 3px rgba(244, 163, 64, 0.14);
+}
+
+.data-pill span.live {
+  background: #22a06b;
+  box-shadow: 0 0 0 3px rgba(34, 160, 107, 0.13);
+}
+
 .data-pill span {
   border: 0;
   background: #22a06b;
@@ -629,7 +730,7 @@
   left: 24px;
   display: grid;
   min-height: 74px;
-  grid-template-columns: 5px 38px minmax(180px, 1fr) repeat(3, minmax(72px, auto));
+  grid-template-columns: 5px 38px minmax(170px, 1fr) repeat(4, minmax(66px, auto));
   align-items: center;
   gap: 14px;
   overflow: hidden;
@@ -690,6 +791,10 @@
 
 .summary-stat.green strong {
   color: #188a5d;
+}
+
+.summary-stat.safe strong {
+  color: #16728d;
 }
 
 .estimate-notice {
@@ -758,6 +863,10 @@
 
   .planner-intro h1 {
     font-size: 30px;
+  }
+
+  .preference-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .map-topbar {

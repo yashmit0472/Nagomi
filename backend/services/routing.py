@@ -5,6 +5,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import networkx as nx
 import osmnx as ox
 
+from services.safety import road_safety_weight, score_route
+from services.traffic import analyze_traffic
+from services.transit import build_transit_itinerary
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GRAPH_PATH = BASE_DIR / "data" / "graphs" / "delhi_graph.graphml"
@@ -68,6 +72,14 @@ PROFILES = {
         "weight": "eco_weight",
         "co2_per_km": 18,
     },
+    "safest": {
+        "label": "Safest",
+        "mode": "cab",
+        "mode_label": "Cab",
+        "color": "#1687a7",
+        "weight": "safe_weight",
+        "co2_per_km": 130,
+    },
 }
 
 
@@ -103,6 +115,7 @@ def _prepare_graph() -> nx.MultiDiGraph:
         data["speed_kph"] = speed_kph
         data["travel_time"] = length / (speed_kph * 1000 / 3600)
         data["eco_weight"] = length * ECO_FACTORS.get(road_class, 1.0)
+        data["safe_weight"] = road_safety_weight(road_class, length)
     return graph
 
 
@@ -119,9 +132,13 @@ def _edge_for_weight(u: int, v: int, weight: str) -> Dict[str, Any]:
     )
 
 
-def _route_details(route: Sequence[int], weight: str) -> Tuple[float, float, List[Dict[str, float]]]:
+def _route_details(
+    route: Sequence[int],
+    weight: str,
+) -> Tuple[float, float, float, List[Dict[str, float]]]:
     distance = 0.0
     travel_time = 0.0
+    safety_weight = 0.0
     coordinates: List[Dict[str, float]] = []
 
     for u, v in zip(route[:-1], route[1:]):
@@ -131,6 +148,7 @@ def _route_details(route: Sequence[int], weight: str) -> Tuple[float, float, Lis
 
         distance += float(edge.get("length", 0.0))
         travel_time += float(edge.get("travel_time", 0.0))
+        safety_weight += float(edge.get("safe_weight", edge.get("length", 0.0)))
         geometry = edge.get("geometry")
         if geometry is not None:
             edge_coordinates = list(geometry.coords)
@@ -145,7 +163,7 @@ def _route_details(route: Sequence[int], weight: str) -> Tuple[float, float, Lis
             if not coordinates or coordinates[-1] != point:
                 coordinates.append(point)
 
-    return distance, travel_time, coordinates
+    return distance, travel_time, safety_weight, coordinates
 
 
 def _fallback_paths(source_node: int, destination_node: int) -> Iterable[List[int]]:
@@ -207,7 +225,7 @@ def _unique_profile_paths(source_node: int, destination_node: int) -> Dict[str, 
 
 
 def _fare(profile_id: str, distance_km: float, duration_minutes: int) -> int:
-    if profile_id == "fastest":
+    if profile_id in {"fastest", "safest"}:
         return int(ceil(45 + distance_km * 14 + duration_minutes * 1.2))
     if profile_id == "cheapest":
         return int(ceil(12 + distance_km * 6))
@@ -216,26 +234,40 @@ def _fare(profile_id: str, distance_km: float, duration_minutes: int) -> int:
 
 def _duration(profile_id: str, road_seconds: float, distance_km: float) -> int:
     road_minutes = road_seconds / 60
-    if profile_id == "fastest":
+    if profile_id in {"fastest", "safest"}:
         return max(1, int(ceil(road_minutes + 3)))
     if profile_id == "cheapest":
         return max(1, int(ceil(max(road_minutes * 1.35, distance_km / 18 * 60) + 5)))
     return max(1, int(ceil(max(road_minutes * 1.15, distance_km / 24 * 60) + 3)))
 
 
-def _route_option(
+def _road_candidate(
     profile_id: str,
     route: Sequence[int],
     source: Dict[str, float],
     destination: Dict[str, float],
 ) -> Dict[str, Any]:
     profile = PROFILES[profile_id]
-    distance, road_seconds, coordinates = _route_details(route, profile["weight"])
+    distance, road_seconds, safety_weight, coordinates = _route_details(
+        route, profile["weight"]
+    )
     distance_km = distance / 1000
-    duration_minutes = _duration(profile_id, road_seconds, distance_km)
+    free_flow_minutes = _duration(profile_id, road_seconds, distance_km)
+    traffic = analyze_traffic(coordinates)
+    duration_minutes = max(
+        1,
+        int(ceil(free_flow_minutes * float(traffic["delay_multiplier"]))),
+    )
     fare = _fare(profile_id, distance_km, duration_minutes)
     co2_grams = int(ceil(distance_km * profile["co2_per_km"]))
-    spread = max(3, int(ceil(duration_minutes * 0.12)))
+    risk_ratio = safety_weight / max(distance, 1)
+    infrastructure_score = max(48, min(94, 94 - (risk_ratio - 0.72) * 30))
+    safety = score_route(
+        [profile["mode"]],
+        transfers=0,
+        walk_meters=0,
+        infrastructure_score=infrastructure_score,
+    )
 
     if coordinates:
         coordinates.insert(0, {"lat": source["lat"], "lon": source["lon"]})
@@ -244,35 +276,124 @@ def _route_option(
         )
 
     return {
-        "id": profile_id,
-        "label": profile["label"],
-        "mode": profile["mode"],
-        "mode_label": profile["mode_label"],
-        "color": profile["color"],
+        "kind": "road",
         "duration_minutes": duration_minutes,
         "distance_meters": round(distance, 1),
         "fare_inr": fare,
         "co2_grams": co2_grams,
         "transfers": 0,
         "walk_meters": 0,
+        "safety": safety,
+        "modes": [profile["mode"]],
+        "legs": [
+            {
+                "mode": profile["mode"],
+                "label": profile["mode_label"],
+                "line": None,
+                "color": profile["color"],
+                "from": "Starting point",
+                "to": "Destination",
+                "duration_minutes": duration_minutes,
+                "distance_meters": round(distance, 1),
+                "fare_inr": fare,
+                "co2_grams": co2_grams,
+                "geometry": coordinates,
+            }
+        ],
+        "geometry": coordinates,
+        "traffic": traffic,
+    }
+
+
+def _apply_traffic_to_transit(itinerary: Dict[str, Any]) -> Dict[str, Any]:
+    for leg in itinerary["legs"]:
+        if leg["mode"] not in {"bus", "shared_auto", "electric_rickshaw"}:
+            continue
+        start = leg["geometry"][0]
+        end = leg["geometry"][-1]
+        try:
+            start_node = ox.distance.nearest_nodes(G, start["lon"], start["lat"])
+            end_node = ox.distance.nearest_nodes(G, end["lon"], end["lat"])
+            route = ox.shortest_path(G, start_node, end_node, weight="travel_time")
+        except (nx.NetworkXNoPath, nx.NodeNotFound, ValueError):
+            route = None
+        if route:
+            _, _, _, coordinates = _route_details(route, "travel_time")
+            if coordinates:
+                leg["geometry"] = [start, *coordinates, end]
+
+    itinerary["geometry"] = []
+    for leg in itinerary["legs"]:
+        for point in leg["geometry"]:
+            if not itinerary["geometry"] or itinerary["geometry"][-1] != point:
+                itinerary["geometry"].append(point)
+
+    traffic = analyze_traffic(itinerary["geometry"])
+    added_minutes = 0
+    multiplier = float(traffic["delay_multiplier"])
+    for leg in itinerary["legs"]:
+        if leg["mode"] in {"bus", "shared_auto", "electric_rickshaw"}:
+            original = leg["duration_minutes"]
+            leg["duration_minutes"] = max(1, int(ceil(original * multiplier)))
+            added_minutes += leg["duration_minutes"] - original
+    itinerary["duration_minutes"] += added_minutes
+    itinerary["traffic"] = traffic
+    return itinerary
+
+
+def _candidate_score(profile_id: str, candidate: Dict[str, Any]) -> float:
+    if profile_id == "fastest":
+        return candidate["duration_minutes"]
+    if profile_id == "cheapest":
+        return candidate["fare_inr"] + candidate["duration_minutes"] * 0.08
+    if profile_id == "eco":
+        return candidate["co2_grams"] + candidate["duration_minutes"] * 0.12
+    return -candidate["safety"]["score"] + candidate["duration_minutes"] * 0.035
+
+
+def _format_option(profile_id: str, candidate: Dict[str, Any]) -> Dict[str, Any]:
+    profile = PROFILES[profile_id]
+    duration_minutes = candidate["duration_minutes"]
+    traffic = candidate["traffic"]
+    uncertainty = 0.10 if traffic["is_live"] else 0.18
+    spread = max(3, int(ceil(duration_minutes * uncertainty)))
+    modes = candidate["modes"]
+    mode_labels = {
+        "walk": "Walk",
+        "metro": "Metro",
+        "bus": "Bus",
+        "cab": "Cab",
+        "shared_auto": "Shared auto",
+        "electric_rickshaw": "E-rickshaw",
+    }
+    mode_label = " + ".join(mode_labels.get(mode, mode.title()) for mode in modes)
+
+    return {
+        "id": profile_id,
+        "label": profile["label"],
+        "mode": "multimodal" if len(modes) > 1 else modes[0],
+        "mode_label": mode_label,
+        "color": profile["color"],
+        "duration_minutes": duration_minutes,
+        "distance_meters": candidate["distance_meters"],
+        "fare_inr": candidate["fare_inr"],
+        "co2_grams": candidate["co2_grams"],
+        "transfers": candidate["transfers"],
+        "walk_meters": candidate["walk_meters"],
+        "safety": candidate["safety"],
+        "traffic": traffic,
         "reliability": {
             "likely_min": max(1, duration_minutes - spread),
             "likely_max": duration_minutes + spread,
             "high_confidence_max": duration_minutes + spread * 2,
         },
-        "summary": "{} direct route".format(profile["mode_label"]),
-        "legs": [
-            {
-                "mode": profile["mode"],
-                "label": profile["mode_label"],
-                "from": "Starting point",
-                "to": "Destination",
-                "duration_minutes": duration_minutes,
-                "distance_meters": round(distance, 1),
-            }
-        ],
-        "geometry": coordinates,
-        "data_quality": "estimated",
+        "summary": "{} via {}".format(
+            "Multimodal trip" if len(modes) > 1 else "Direct trip",
+            mode_label,
+        ),
+        "legs": candidate["legs"],
+        "geometry": candidate["geometry"],
+        "data_quality": "live" if traffic["is_live"] else "modeled_and_scheduled",
     }
 
 
@@ -296,15 +417,33 @@ def build_route_plan(
 
     source = {"lat": source_lat, "lon": source_lon}
     destination = {"lat": dest_lat, "lon": dest_lon}
-    routes = [
-        _route_option(profile_id, paths[profile_id], source, destination)
-        for profile_id in PROFILES
-    ]
+    routes = []
+    for profile_id in PROFILES:
+        road_candidate = _road_candidate(
+            profile_id,
+            paths[profile_id],
+            source,
+            destination,
+        )
+        transit_candidate = build_transit_itinerary(
+            source,
+            destination,
+            profile_id,
+        )
+        candidates = [road_candidate]
+        if transit_candidate is not None:
+            candidates.append(_apply_traffic_to_transit(transit_candidate))
+        selected = min(
+            candidates,
+            key=lambda candidate: _candidate_score(profile_id, candidate),
+        )
+        routes.append(_format_option(profile_id, selected))
 
     preference_order = {
         "fastest": "fastest",
         "cheapest": "cheapest",
         "eco": "eco",
+        "safest": "safest",
     }
     recommended = preference_order.get(preference, "fastest")
     routes.sort(key=lambda route: route["id"] != recommended)
@@ -315,10 +454,12 @@ def build_route_plan(
         "destination": destination,
         "recommended_route_id": recommended,
         "routes": routes,
-        "routing_mode": "local_estimates",
+        "routing_mode": "multimodal_graph",
         "notice": (
-            "Times, fares, and emissions are transparent estimates from the local "
-            "road graph. Live traffic and scheduled public transit are not connected yet."
+            "Metro and bus times use the local scheduled transit graph. Traffic uses "
+            "TomTom live flow when TOMTOM_API_KEY is configured, otherwise a clearly "
+            "labeled time-aware Delhi model. Safety is an infrastructure proxy, not a "
+            "crime guarantee."
         ),
     }
 

@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from models import HealthResponse, PlaceSearchResponse, RouteRequest
 from services.places import search_places
 from services.routing import G, build_route_plan, get_route
+from services.traffic import analyze_traffic, live_traffic_available
+from services.transit import TRANSIT_GRAPH, transit_available
 
 
 app = FastAPI(
@@ -35,8 +37,9 @@ def health():
     return {
         "status": "ok",
         "graph": {"nodes": len(G.nodes), "edges": len(G.edges)},
-        "live_traffic": False,
-        "scheduled_transit": False,
+        "live_traffic": live_traffic_available(),
+        "scheduled_transit": transit_available(),
+        "traffic_source": "tomtom_live" if live_traffic_available() else "delhi_time_model",
     }
 
 
@@ -53,6 +56,16 @@ def routes(request: RouteRequest):
         request.destination.lat,
         request.destination.lon,
         request.preference,
+    )
+
+
+@app.post("/traffic")
+def traffic(request: RouteRequest):
+    return analyze_traffic(
+        [
+            {"lat": request.source.lat, "lon": request.source.lon},
+            {"lat": request.destination.lat, "lon": request.destination.lon},
+        ]
     )
 
 

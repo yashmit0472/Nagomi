@@ -27,16 +27,17 @@ Status as of June 13, 2026:
 | Cheapest routing | Estimated MVP | Shared-auto fare model over distance |
 | Eco Saver routing | Estimated MVP | E-rickshaw emissions model and eco road weights |
 | Walking routing | Not built | Saved OSM graph is drive-only |
-| Metro and bus routing | Not built | No GTFS schedule/stop graph |
-| Rickshaw/ride-share legs | Not built | No provider or first/last-mile model |
+| Metro and bus routing | MVP built | Local routable Delhi metro and bus corridor graph |
+| Rickshaw/ride-share legs | MVP built | First/last-mile e-rickshaw and shared-auto estimates |
 | Live transit updates | Not built | No GTFS-Realtime feed |
-| Live road traffic | Not built | No traffic provider integration |
+| Live road traffic | Provider ready | TomTom live flow with time-aware offline fallback |
 | ETA confidence ranges | Estimated MVP | Transparent ranges; historical model remains future work |
 | Crowding prediction | Not built | No passenger-count or occupancy data |
 | Personalization | Not built | No users, preferences, or feedback loop |
 | Network intelligence | Prototype only | Neo4j node/edge import scripts exist |
 | Digital twin | Not built | No simulation engine or scenario model |
 | Automated tests | Working | Health, search, routing profiles, geometry, and CORS |
+| Safest route | MVP built | Time, transfers, walking exposure, mode, and road hierarchy |
 
 The local GraphML file contains 10,192 nodes and 24,441 directed edges. Its
 available edge attributes include road class, length, geometry, lanes, and
@@ -204,7 +205,7 @@ Later data:
 - Add source/destination place autocomplete and retain map-click selection.
 - Import walk-capable OSM data and Delhi GTFS into OpenTripPlanner.
 - Return and draw multiple itineraries with colored per-mode legs.
-- Add Fastest, Cheapest, and Eco Saver ranking presets.
+- Replace the current heuristic presets with calibrated Pareto ranking.
 - Show duration, fare, CO2 estimate, transfers, walking, and data freshness.
 - Add backend and frontend tests for the complete route flow.
 
