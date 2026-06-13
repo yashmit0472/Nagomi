@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from models import HealthResponse, PlaceSearchResponse, RouteRequest
-from services.places import geocoding_source, search_places
+from models import HealthResponse, PlaceSearchResponse, RouteRequest, Place
+from services.places import geocoding_source, search_places, reverse_geocode
 from services.routing import G, build_route_plan, get_route
 from services.traffic import analyze_traffic, live_traffic_available
 from services.transit import TRANSIT_GRAPH, transit_available
@@ -47,6 +47,11 @@ def health():
 @app.get("/places", response_model=PlaceSearchResponse)
 def places(q: str = Query("", max_length=80)):
     return {"places": search_places(q), "source": geocoding_source()}
+
+
+@app.get("/places/reverse", response_model=Place)
+def places_reverse(lat: float, lon: float):
+    return reverse_geocode(lat, lon)
 
 
 @app.post("/routes")

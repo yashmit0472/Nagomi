@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
   CircleMarker,
@@ -203,14 +203,26 @@ function MapViewport({
   route,
   source,
   destination,
+  centerOnUser,
+  onCenterOnUserHandled,
 }: {
   route?: RouteOption;
   source: Location;
   destination: Location;
+  centerOnUser?: [number, number] | null;
+  onCenterOnUserHandled?: () => void;
 }) {
   const map = useMap();
 
   useEffect(() => {
+    if (centerOnUser) {
+      map.flyTo(centerOnUser, 15, { animate: true, duration: 1.5 });
+      if (onCenterOnUserHandled) {
+        onCenterOnUserHandled();
+      }
+      return;
+    }
+
     const points = route?.geometry.length
       ? route.geometry.map(
           (point) => [point.lat, point.lon] as [number, number],
@@ -224,7 +236,7 @@ function MapViewport({
       padding: [48, 48],
       maxZoom: 15,
     });
-  }, [destination, map, route, source]);
+  }, [destination, map, route, source, centerOnUser, onCenterOnUserHandled]);
 
   return null;
 }
@@ -262,6 +274,55 @@ function App() {
   const [selectedRouteId, setSelectedRouteId] =
     useState<Preference>("fastest");
   const [notice, setNotice] = useState("");
+  const [userLocation, setUserLocation] = useState<Location | null>(null);
+  const [userGps, setUserGps] = useState<{ lat: number; lon: number } | null>(null);
+  const [locatingField, setLocatingField] = useState<ActiveField | null>(null);
+  const [centerOnUser, setCenterOnUser] = useState<[number, number] | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const reverseGeocodedRef = useRef(false);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    const onSuccess = (position: GeolocationPosition) => {
+      const { latitude, longitude } = position.coords;
+      setUserGps({ lat: latitude, lon: longitude });
+
+      // Only reverse geocode once so we don't spam the API on every GPS update
+      if (!reverseGeocodedRef.current) {
+        reverseGeocodedRef.current = true;
+        axios.get<Location>(`${API_URL}/places/reverse`, {
+          params: { lat: latitude, lon: longitude },
+        }).then((response) => {
+          setUserLocation(response.data);
+        }).catch(() => {
+          setUserLocation({
+            name: "Current Location",
+            subtitle: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+            lat: latitude,
+            lon: longitude,
+          });
+        });
+      }
+    };
+
+    const onError = (err: GeolocationPositionError) => {
+      console.warn("GPS watch error:", err.message);
+    };
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      onSuccess,
+      onError,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    );
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [suggestions, setSuggestions] = useState<Location[]>([]);
@@ -298,6 +359,70 @@ function App() {
     },
     [],
   );
+
+  const handleSelectCurrentLocation = useCallback((field: ActiveField) => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser.");
+      return;
+    }
+    setLocatingField(field);
+    setError("");
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const response = await axios.get<Location>(
+            `${API_URL}/places/reverse`,
+            { params: { lat: latitude, lon: longitude } }
+          );
+          updateLocation(field, response.data);
+        } catch (err) {
+          const fallbackLocation: Location = {
+            name: "Current Location",
+            subtitle: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+            lat: latitude,
+            lon: longitude,
+          };
+          updateLocation(field, fallbackLocation);
+        } finally {
+          setLocatingField(null);
+        }
+      },
+      (err) => {
+        setError("Location access denied or timed out. Please enable GPS.");
+        setLocatingField(null);
+      },
+      { enableHighAccuracy: true, timeout: 7000 }
+    );
+  }, [updateLocation]);
+
+  const handleLocateUser = useCallback(() => {
+    // If watchPosition already has a fix, fly there immediately
+    if (userGps) {
+      setCenterOnUser([userGps.lat, userGps.lon]);
+      return;
+    }
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setCenterOnUser([latitude, longitude]);
+        setUserGps({ lat: latitude, lon: longitude });
+      },
+      () => {
+        alert("Unable to retrieve your location. Please ensure location access is allowed.");
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
+    );
+
+  }, [userGps]);
+
+  const handleCenterOnUserHandled = useCallback(() => {
+    setCenterOnUser(null);
+  }, []);
 
   useEffect(() => {
     const query = activeQuery.trim();
@@ -364,11 +489,24 @@ function App() {
   );
 
   const applyInput = (field: ActiveField, value: string) => {
+    if (locatingField !== null) return;
+    const currentLoc = field === "source" ? source : destination;
+    if (value.trim() === currentLoc.name) return;
+    if (value.trim() === "Locating...") return;
+
     const suggested = suggestions.find(
       (place) => place.name.toLowerCase() === value.trim().toLowerCase(),
     );
     const parsed = suggested ?? suggestions[0] ?? parseLocation(value);
-    if (parsed) updateLocation(field, parsed);
+    if (parsed) {
+      updateLocation(field, parsed);
+    } else {
+      if (field === "source") {
+        setSourceInput(source.name);
+      } else {
+        setDestinationInput(destination.name);
+      }
+    }
   };
 
   const handleLocationKeyDown = (
@@ -433,7 +571,8 @@ function App() {
             <label className={activeField === "source" ? "active" : ""}>
               <span>FROM</span>
               <input
-                value={sourceInput}
+                value={locatingField === "source" ? "Locating..." : sourceInput}
+                disabled={locatingField === "source"}
                 onFocus={() => {
                   setActiveField("source");
                   setSearchOpen(true);
@@ -457,7 +596,8 @@ function App() {
             <label className={activeField === "destination" ? "active" : ""}>
               <span>TO</span>
               <input
-                value={destinationInput}
+                value={locatingField === "destination" ? "Locating..." : destinationInput}
+                disabled={locatingField === "destination"}
                 onFocus={() => {
                   setActiveField("destination");
                   setSearchOpen(true);
@@ -489,40 +629,85 @@ function App() {
             <span>down</span>
           </button>
 
-          {searchOpen && activeQuery.trim().length >= 2 && (
+          {searchOpen && (
             <div className="place-suggestions">
-              <div className="suggestion-source">
+              <button
+                type="button"
+                className="gps-suggestion-row"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  handleSelectCurrentLocation(activeField);
+                }}
+                disabled={locatingField !== null}
+              >
+                <span className="suggestion-gps-icon">🎯</span>
                 <span>
-                  {searchSource === "geoapify"
-                    ? "Searching across Delhi"
-                    : "Offline road and landmark search"}
+                  <strong>Use current location</strong>
+                  <small>Detect location using GPS</small>
                 </span>
-                <small>
-                  {searchSource === "geoapify" ? "Geoapify" : "Local graph"}
-                </small>
-              </div>
-              {suggestions.length > 0 ? (
-                suggestions.map((place) => (
-                  <button
-                    key={`${place.name}-${place.lat}-${place.lon}`}
-                    type="button"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      updateLocation(activeField, place);
-                    }}
-                  >
-                    <span className="suggestion-pin" />
+                {locatingField === activeField && <span className="spinner suggestion-spinner" />}
+              </button>
+
+              {activeQuery.trim().length >= 2 ? (
+                <>
+                  <div className="suggestion-source">
                     <span>
-                      <strong>{place.name}</strong>
-                      <small>{place.subtitle}</small>
+                      {searchSource === "geoapify"
+                        ? "Searching across Delhi"
+                        : "Offline road and landmark search"}
                     </span>
-                    <small className="result-type">
-                      {place.result_type?.replaceAll("_", " ") ?? "place"}
+                    <small>
+                      {searchSource === "geoapify" ? "Geoapify" : "Local graph"}
                     </small>
-                  </button>
-                ))
+                  </div>
+                  {suggestions.length > 0 ? (
+                    suggestions.map((place) => (
+                      <button
+                        key={`${place.name}-${place.lat}-${place.lon}`}
+                        type="button"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          updateLocation(activeField, place);
+                        }}
+                      >
+                        <span className="suggestion-pin" />
+                        <span>
+                          <strong>{place.name}</strong>
+                          <small>{place.subtitle}</small>
+                        </span>
+                        <small className="result-type">
+                          {place.result_type?.replaceAll("_", " ") ?? "place"}
+                        </small>
+                      </button>
+                    ))
+                  ) : (
+                    <p>No matching Delhi location found.</p>
+                  )}
+                </>
               ) : (
-                <p>No matching Delhi location found.</p>
+                <>
+                  <div className="suggestion-source">
+                    <span>Quick Select Delhi Landmarks</span>
+                    <small>Curated</small>
+                  </div>
+                  {DEFAULT_PLACES.slice(0, 6).map((place) => (
+                    <button
+                      key={`${place.name}-${place.lat}-${place.lon}`}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        updateLocation(activeField, place);
+                      }}
+                    >
+                      <span className="suggestion-pin" />
+                      <span>
+                        <strong>{place.name}</strong>
+                        <small>{place.subtitle}</small>
+                      </span>
+                      <small className="result-type">landmark</small>
+                    </button>
+                  ))}
+                </>
               )}
             </div>
           )}
@@ -720,7 +905,46 @@ function App() {
             route={selectedRoute}
             source={source}
             destination={destination}
+            centerOnUser={centerOnUser}
+            onCenterOnUserHandled={handleCenterOnUserHandled}
           />
+
+          {userGps && (
+            <>
+              {/* Outer pulsing halo */}
+              <CircleMarker
+                center={[userGps.lat, userGps.lon]}
+                radius={18}
+                pathOptions={{
+                  color: "#3b82f6",
+                  weight: 0,
+                  fillColor: "#3b82f6",
+                  fillOpacity: 0.18,
+                  className: "user-location-pulse",
+                }}
+              />
+              {/* Solid blue dot */}
+              <CircleMarker
+                center={[userGps.lat, userGps.lon]}
+                radius={8}
+                pathOptions={{
+                  color: "#ffffff",
+                  weight: 3,
+                  fillColor: "#2563eb",
+                  fillOpacity: 1,
+                }}
+              >
+                <Tooltip direction="top" offset={[0, -8]} permanent={false}>
+                  <span style={{ fontWeight: 700, fontSize: "11px" }}>📍 You are here</span>
+                  {userLocation && (
+                    <span style={{ display: "block", fontSize: "10px", opacity: 0.75 }}>
+                      {userLocation.name}
+                    </span>
+                  )}
+                </Tooltip>
+              </CircleMarker>
+            </>
+          )}
 
           {routes
             .filter((route) => route.id !== selectedRouteId)
@@ -793,6 +1017,22 @@ function App() {
             </Tooltip>
           </CircleMarker>
         </MapContainer>
+
+        <button
+          className="locate-me-btn"
+          style={{ bottom: selectedRoute ? "130px" : "24px" }}
+          onClick={handleLocateUser}
+          title="Find my location"
+          type="button"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 2v4" />
+            <path d="M12 18v4" />
+            <path d="M4 12H2" />
+            <path d="M22 12h-4" />
+          </svg>
+        </button>
 
         <div className="map-topbar">
           <div className="map-instruction">

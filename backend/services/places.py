@@ -265,3 +265,138 @@ def search_places(query: str = "") -> List[Dict[str, object]]:
     except (httpx.HTTPError, KeyError, TypeError, ValueError):
         online_results = []
     return _dedupe([*online_results, *local_results])
+
+
+def reverse_geocode(lat: float, lon: float) -> Dict[str, Any]:
+    # Try Geoapify reverse geocoding
+    if GEOAPIFY_API_KEY:
+        try:
+            response = httpx.get(
+                "https://api.geoapify.com/v1/geocode/reverse",
+                params={
+                    "lat": lat,
+                    "lon": lon,
+                    "format": "json",
+                    "apiKey": GEOAPIFY_API_KEY,
+                },
+                timeout=3.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                results = data.get("results", [])
+                if results:
+                    result = results[0]
+                    name = result.get("name") or result.get("street") or result.get("formatted") or "Pinned Location"
+                    subtitle = result.get("address_line2") or result.get("formatted") or "Delhi"
+                    return {
+                        "id": "reverse-geoapify",
+                        "name": name,
+                        "subtitle": subtitle,
+                        "lat": lat,
+                        "lon": lon,
+                        "provider": "geoapify",
+                        "result_type": result.get("result_type", "place"),
+                        "confidence": 1.0,
+                    }
+        except Exception:
+            pass
+
+    # Try TomTom reverse geocoding
+    from services.traffic import TOMTOM_API_KEY
+    if TOMTOM_API_KEY:
+        try:
+            response = httpx.get(
+                f"https://api.tomtom.com/search/2/reverseGeocode/{lat},{lon}.json",
+                params={"key": TOMTOM_API_KEY},
+                timeout=3.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                addresses = data.get("addresses", [])
+                if addresses:
+                    addr = addresses[0].get("address", {})
+                    name = addr.get("freeformAddress") or addr.get("streetName") or "Pinned Location"
+                    subtitle = addr.get("municipalitySubdivision") or addr.get("municipality") or "Delhi"
+                    return {
+                        "id": "reverse-tomtom",
+                        "name": name,
+                        "subtitle": subtitle,
+                        "lat": lat,
+                        "lon": lon,
+                        "provider": "tomtom",
+                        "result_type": "street" if addr.get("streetName") else "place",
+                        "confidence": 1.0,
+                    }
+        except Exception:
+            pass
+
+    # Try public Nominatim
+    try:
+        response = httpx.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={
+                "lat": lat,
+                "lon": lon,
+                "format": "json",
+                "zoom": 18,
+                "addressdetails": 1,
+            },
+            headers={"User-Agent": "Nagomi-Transit-Planner/1.0"},
+            timeout=3.0,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            display_name = data.get("display_name", "")
+            address = data.get("address", {})
+            road = address.get("road") or address.get("suburb") or address.get("city_district")
+            city = address.get("city") or address.get("county") or "Delhi"
+            
+            if road:
+                name = road
+                subtitle = display_name.replace(road, "", 1).strip(" ,") or city
+            else:
+                name = display_name.split(",")[0] if display_name else "Pinned Location"
+                subtitle = ", ".join(display_name.split(",")[1:4]) if display_name else city
+            
+            return {
+                "id": "reverse-nominatim",
+                "name": name,
+                "subtitle": subtitle,
+                "lat": lat,
+                "lon": lon,
+                "provider": "nominatim",
+                "result_type": "place",
+                "confidence": 1.0,
+            }
+    except Exception:
+        pass
+
+    # Fallback using local Delhi metro station proximity
+    try:
+        from services.metro import nearest_station
+        station = nearest_station(lat, lon)
+        return {
+            "id": "reverse-local-metro",
+            "name": f"Near {station['name']}",
+            "subtitle": f"Snapping to closest {station['line']} Line station",
+            "lat": lat,
+            "lon": lon,
+            "provider": "local_metro",
+            "result_type": "station",
+            "confidence": 0.8,
+        }
+    except Exception:
+        pass
+
+    # Ultimate fallback
+    return {
+        "id": "reverse-coordinates",
+        "name": "Pinned coordinates",
+        "subtitle": f"{lat:.5f}, {lon:.5f}",
+        "lat": lat,
+        "lon": lon,
+        "provider": "local",
+        "result_type": "coordinate",
+        "confidence": 1.0,
+    }
+

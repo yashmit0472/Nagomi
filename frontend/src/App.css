@@ -1004,3 +1004,100 @@
     display: none;
   }
 }
+
+/* Locate Me Button */
+.locate-me-btn {
+  position: absolute;
+  z-index: 500;
+  right: 24px;
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e3e0ec;
+  border-radius: 50%;
+  color: #6d5dfc;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(40, 34, 62, 0.16);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.locate-me-btn:hover {
+  color: #5747e9;
+  background: #f7f6ff;
+  transform: translateY(-2px) scale(1.05);
+}
+
+.locate-me-btn:active {
+  transform: translateY(0) scale(0.95);
+}
+
+/* GPS Suggestion Row */
+.gps-suggestion-row {
+  display: grid !important;
+  width: 100% !important;
+  grid-template-columns: 18px minmax(0, 1fr) auto !important;
+  align-items: center;
+  gap: 8px;
+  padding: 12px !important;
+  border: 0;
+  border-bottom: 1px solid #eeecf5 !important;
+  color: #6d5dfc !important;
+  background: #fcfbff !important;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+}
+
+.gps-suggestion-row:hover:not(:disabled) {
+  background: #f2efff !important;
+}
+
+.gps-suggestion-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.suggestion-gps-icon {
+  font-size: 14px;
+  margin-left: 1px;
+}
+
+.gps-suggestion-row strong {
+  color: #6d5dfc !important;
+}
+
+.gps-suggestion-row small {
+  color: #8c82a5 !important;
+}
+
+.suggestion-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(109, 93, 252, 0.2);
+  border-top-color: #6d5dfc;
+}
+
+/* Geolocation Pulse Animation */
+@keyframes pulse {
+  0% {
+    fill-opacity: 0.08;
+    stroke-width: 0;
+  }
+  50% {
+    fill-opacity: 0.28;
+    stroke-width: 1px;
+  }
+  100% {
+    fill-opacity: 0.08;
+    stroke-width: 0;
+  }
+}
+
+.user-location-pulse {
+  animation: pulse 2.5s infinite ease-in-out;
+}
+
