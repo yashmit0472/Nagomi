@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from services import places
+from services.geo_routing import _build_legs
 
 
 class NagomiApiTests(unittest.TestCase):
@@ -121,6 +122,118 @@ class NagomiApiTests(unittest.TestCase):
         body = response.json()
         self.assertIn(body["source"], {"tomtom_live", "delhi_time_model"})
         self.assertGreaterEqual(body["delay_multiplier"], 1)
+
+    def test_transit_legs_use_station_names_instead_of_transfer_labels(self):
+        steps = [
+            {
+                "from_index": 0,
+                "to_index": 1,
+                "distance": 300,
+                "time": 240,
+                "instruction": {"text": "Walk northeast."},
+            },
+            {
+                "from_index": 1,
+                "to_index": 2,
+                "distance": 20,
+                "time": 20,
+                "instruction": {
+                    "text": "Enter the Brigadier Hoshiar Singh Station."
+                },
+            },
+            {
+                "from_index": 2,
+                "to_index": 3,
+                "distance": 9000,
+                "time": 900,
+                "instruction": {
+                    "text": "Take the Green Line toward Inderlok. (8 stops)"
+                },
+            },
+            {
+                "from_index": 3,
+                "to_index": 4,
+                "distance": 25,
+                "time": 25,
+                "instruction": {"text": "Exit the Inderlok Station."},
+            },
+            {
+                "from_index": 4,
+                "to_index": 5,
+                "distance": 180,
+                "time": 140,
+                "instruction": {"text": "Walk to the Red Line platform."},
+            },
+            {
+                "from_index": 5,
+                "to_index": 6,
+                "distance": 15,
+                "time": 15,
+                "instruction": {"text": "Enter the Inderlok Station."},
+            },
+            {
+                "from_index": 6,
+                "to_index": 7,
+                "distance": 7000,
+                "time": 780,
+                "instruction": {
+                    "text": "Take the Red Line toward Shaheed Sthal. (7 stops)"
+                },
+            },
+            {
+                "from_index": 7,
+                "to_index": 8,
+                "distance": 20,
+                "time": 20,
+                "instruction": {"text": "Exit the Kashmere Gate Station."},
+            },
+            {
+                "from_index": 8,
+                "to_index": 9,
+                "distance": 500,
+                "time": 400,
+                "instruction": {"text": "Walk southeast."},
+            },
+        ]
+        points = [
+            {"lat": 28.60 + index * 0.001, "lon": 77.10 + index * 0.001}
+            for index in range(10)
+        ]
+
+        legs = _build_legs(steps, points)
+
+        self.assertEqual(
+            [(leg["label"], leg["from"], leg["to"]) for leg in legs],
+            [
+                (
+                    "Walk",
+                    "Starting point",
+                    "Brigadier Hoshiar Singh Station - Green Line platform",
+                ),
+                (
+                    "Green Line",
+                    "Brigadier Hoshiar Singh Station - Green Line platform",
+                    "Inderlok Station",
+                ),
+                (
+                    "Walk",
+                    "Inderlok Station",
+                    "Inderlok Station - Red Line platform",
+                ),
+                (
+                    "Red Line",
+                    "Inderlok Station - Red Line platform",
+                    "Kashmere Gate Station",
+                ),
+                ("Walk", "Kashmere Gate Station", "Destination"),
+            ],
+        )
+        self.assertFalse(
+            any(
+                leg["from"] == "Transfer" or leg["to"] == "Transfer"
+                for leg in legs
+            )
+        )
 
     def test_place_search(self):
         response = self.client.get("/places", params={"q": "metro"})

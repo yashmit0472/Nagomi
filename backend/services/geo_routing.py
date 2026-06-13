@@ -63,6 +63,18 @@ def _line_label(instruction: str, mode: str) -> str:
     return "Metro" if mode == "metro" else "Bus"
 
 
+def _station_name(instruction: str, action: str) -> Optional[str]:
+    match = re.search(
+        r"\b{} (?:the )?(.+?)(?: Station)?\.?$".format(action),
+        instruction.strip(),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    name = re.sub(r"\s+Station$", "", match.group(1).strip(), flags=re.IGNORECASE)
+    return "{} Station".format(name)
+
+
 def _points_between(
     points: Sequence[Dict[str, float]],
     first: int,
@@ -80,50 +92,128 @@ def _build_legs(
     points: Sequence[Dict[str, float]],
 ) -> List[Dict[str, Any]]:
     legs: List[Dict[str, Any]] = []
-    for step in steps:
-        instruction = str(step.get("instruction", {}).get("text", "Continue"))
-        if "arrived at your destination" in instruction.lower():
-            continue
-        mode = _route_mode(instruction)
-        label = _line_label(instruction, mode)
-        step_geometry = _points_between(
-            points,
-            int(step.get("from_index", 0)),
-            int(step.get("to_index", 0)),
-        )
-        distance = float(step.get("distance", 0))
-        duration = float(step.get("time", 0)) / 60
+    walking_steps: List[Dict[str, Any]] = []
+    current_place = "Starting point"
+    pending_transit_index: Optional[int] = None
+    pending_enter_station: Optional[str] = None
 
-        if (
-            legs
-            and legs[-1]["mode"] == mode
-            and (mode == "walk" or legs[-1]["label"] == label)
-        ):
-            leg = legs[-1]
-            leg["distance_meters"] += distance
-            leg["duration_minutes"] += duration
-            for point in step_geometry:
-                if not leg["geometry"] or leg["geometry"][-1] != point:
-                    leg["geometry"].append(point)
-            continue
+    def step_values(step: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "distance": float(step.get("distance", 0)),
+            "duration": float(step.get("time", 0)) / 60,
+            "geometry": _points_between(
+                points,
+                int(step.get("from_index", 0)),
+                int(step.get("to_index", 0)),
+            ),
+        }
+
+    def append_geometry(
+        target: List[Dict[str, float]],
+        additions: Iterable[Dict[str, float]],
+    ) -> None:
+        for point in additions:
+            if not target or target[-1] != point:
+                target.append(point)
+
+    def flush_walking(destination_name: str) -> None:
+        nonlocal current_place
+        if not walking_steps:
+            current_place = destination_name
+            return
+
+        geometry: List[Dict[str, float]] = []
+        distance = 0.0
+        duration = 0.0
+        for walking_step in walking_steps:
+            values = step_values(walking_step)
+            distance += values["distance"]
+            duration += values["duration"]
+            append_geometry(geometry, values["geometry"])
 
         legs.append(
             {
-                "mode": mode,
-                "label": label,
-                "line": None if mode == "walk" else label,
-                "color": MODE_COLORS[mode],
-                "from": "Starting point" if not legs else "Transfer",
-                "to": "Destination",
+                "mode": "walk",
+                "label": "Walk",
+                "line": None,
+                "color": MODE_COLORS["walk"],
+                "from": current_place,
+                "to": destination_name,
                 "duration_minutes": duration,
                 "distance_meters": distance,
                 "fare_inr": 0,
                 "co2_grams": 0,
-                "geometry": step_geometry,
+                "geometry": geometry,
             }
         )
+        walking_steps.clear()
+        current_place = destination_name
 
-    for index, leg in enumerate(legs):
+    for step in steps:
+        instruction = str(step.get("instruction", {}).get("text", "Continue"))
+        if "arrived at your destination" in instruction.lower():
+            continue
+
+        enter_station = _station_name(instruction, "Enter")
+        exit_station = _station_name(instruction, "Exit")
+        mode = _route_mode(instruction)
+
+        if enter_station:
+            walking_steps.append(step)
+            pending_enter_station = enter_station
+            continue
+
+        if mode in {"metro", "bus"}:
+            label = _line_label(instruction, mode)
+            if pending_enter_station:
+                flush_walking(
+                    "{} - {} platform".format(pending_enter_station, label)
+                )
+                pending_enter_station = None
+            elif walking_steps:
+                flush_walking("{} boarding point".format(_line_label(instruction, mode)))
+            values = step_values(step)
+            legs.append(
+                {
+                    "mode": mode,
+                    "label": label,
+                    "line": label,
+                    "color": MODE_COLORS[mode],
+                    "from": current_place,
+                    "to": "Destination",
+                    "duration_minutes": values["duration"],
+                    "distance_meters": values["distance"],
+                    "fare_inr": 0,
+                    "co2_grams": 0,
+                    "geometry": values["geometry"],
+                }
+            )
+            pending_transit_index = len(legs) - 1
+            continue
+
+        if exit_station and pending_transit_index is not None:
+            values = step_values(step)
+            transit_leg = legs[pending_transit_index]
+            transit_leg["to"] = exit_station
+            transit_leg["duration_minutes"] += values["duration"]
+            transit_leg["distance_meters"] += values["distance"]
+            append_geometry(transit_leg["geometry"], values["geometry"])
+            current_place = exit_station
+            pending_transit_index = None
+            continue
+
+        walking_steps.append(step)
+
+    if pending_transit_index is not None:
+        legs[pending_transit_index]["to"] = "Destination"
+        current_place = "Destination"
+    elif pending_enter_station is not None:
+        flush_walking(pending_enter_station)
+        flush_walking("Destination")
+    else:
+        flush_walking("Destination")
+
+    for leg in legs:
         leg["duration_minutes"] = max(1, int(ceil(leg["duration_minutes"])))
         leg["distance_meters"] = round(leg["distance_meters"], 1)
         if leg["mode"] == "metro":
@@ -132,10 +222,6 @@ def _build_legs(
         elif leg["mode"] == "bus":
             leg["fare_inr"] = 15 if leg["distance_meters"] < 8000 else 25
             leg["co2_grams"] = int(ceil(leg["distance_meters"] / 1000 * 55))
-        if index:
-            leg["from"] = legs[index - 1]["to"]
-        if index < len(legs) - 1:
-            leg["to"] = "Transfer"
     return legs
 
 
