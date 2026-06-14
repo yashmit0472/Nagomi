@@ -1,15 +1,8 @@
 # Nagomi
 
-## GraphIQ Transit: AI-Powered Multi-Modal Mobility Optimization Platform
+Nagomi is a Delhi mobility planner that combines a FastAPI backend with a React/Vite frontend to help compare route options. It is designed to show different travel choices based on speed, cost, emissions, and safety rather than only giving one shortest path.
 
-Nagomi models urban mobility as a dynamic, multi-layer graph spanning roads,
-walking links, public transport, and shared mobility. Instead of returning only
-the shortest path, the platform is designed to compare journeys by time, cost,
-carbon impact, comfort, and reliability.
-
-> An AI-powered graph intelligence platform that transforms fragmented urban
-> transportation into a self-optimizing, sustainable, and predictive mobility
-> network.
+This project is a prototype for exploring multi-modal routing and transportation intelligence in the Delhi area.
 
 ## Current Prototype
 
@@ -68,9 +61,11 @@ Nagomi will rank viable itineraries under selectable objectives:
 See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for the audited feature
 status, recommended architecture, data requirements, and phased build plan.
 
-## Run the Current Prototype
+## How to Run the Program
 
-### Backend
+### 1. Start the backend API
+
+From the project root:
 
 ```bash
 cd backend
@@ -80,9 +75,14 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8010
 ```
 
-The API is available at `http://127.0.0.1:8010`.
+This starts the FastAPI service. Once it is running, open:
 
-### Frontend
+- http://127.0.0.1:8010
+- or the Swagger docs at http://127.0.0.1:8010/docs
+
+### 2. Start the frontend app
+
+In a second terminal:
 
 ```bash
 cd frontend
@@ -90,7 +90,19 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL, usually `http://localhost:5173`.
+Open the local Vite address shown in the terminal, usually:
+
+- http://localhost:5173
+
+### 3. Use the app
+
+1. Pick a start and destination point on the Delhi map.
+2. Choose a route preference such as Fastest, Cheapest, or Eco Saver.
+3. Click the route button to view the suggested options.
+
+### Optional: enable extra features
+
+If you want live traffic or address autocomplete, add the relevant keys to the backend environment before starting the API. The app can still run without these extras using the local Delhi graph data.
 
 ### Current Usage
 
