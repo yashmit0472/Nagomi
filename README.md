@@ -1,3 +1,6 @@
+Here is the link to our project ppt:
+https://canva.link/zi9ppju92bkadt1
+
 # Nagomi
 
 Nagomi is a Delhi mobility planner that combines a FastAPI backend with a React/Vite frontend to help compare route options. It is designed to show different travel choices based on speed, cost, emissions, and safety rather than only giving one shortest path.
